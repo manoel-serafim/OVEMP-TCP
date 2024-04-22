@@ -5,6 +5,7 @@
 pthread_mutex_t exit_mutex = PTHREAD_MUTEX_INITIALIZER;
 int should_exit = 0;
 
+
 //separate into other files latter:
 void print_addrinfo(struct addrinfo *info) {
     printf( "%s", CYN);
@@ -45,7 +46,14 @@ void *send_thread(void *arg) {
     printf("%s", YELLOW"[!] READY TO SEND [!]\n"RESET );
 
     for(;;) {
+        pthread_mutex_lock(&exit_mutex);
+        if (should_exit) {
+            pthread_mutex_unlock(&exit_mutex);
+            break;
+        }
         printf("\n%s", RED"#> "RESET );
+        pthread_mutex_unlock(&exit_mutex);
+        
 
         line_size = getline(&send_buffer, &buf_size, stdin);
         if (line_size < 0) {
@@ -53,17 +61,7 @@ void *send_thread(void *arg) {
             break;
         }
 
-
         send(sockfd, send_buffer, line_size, 0);
-
-        // Check for "bye" message
-        pthread_mutex_lock(&exit_mutex);
-        if (strcasecmp(send_buffer, "bye\n") == 0) {
-            should_exit = 1;
-            pthread_mutex_unlock(&exit_mutex);
-            break;
-        }
-        pthread_mutex_unlock(&exit_mutex);
     }
     
     free(send_buffer);
@@ -84,19 +82,21 @@ void *recv_thread(void *arg) {
 
     int nbytes;
     for(;;) {
-        pthread_mutex_lock(&exit_mutex);
-        if (should_exit) {
-            pthread_mutex_unlock(&exit_mutex);
-            break;
-        }
-        pthread_mutex_unlock(&exit_mutex);
-
+        
         nbytes = recv(sockfd, recv_buffer, BUFFER_SIZE - 1, 0);
         if (nbytes <= 0) {
             break;
         }
         recv_buffer[nbytes] = '\0';
-        printf(CYN"\n#> %s"RESET, recv_buffer);
+        printf(CYN"\n#> %s\n"RED"#>", recv_buffer);
+        // Check for "bye" message
+        pthread_mutex_lock(&exit_mutex);
+        if (strcasecmp(recv_buffer, "bye\n") == 0) {
+            should_exit = 1;
+            pthread_mutex_unlock(&exit_mutex);
+            break;
+        }
+        pthread_mutex_unlock(&exit_mutex);
     }
 
     free(recv_buffer);
@@ -115,10 +115,13 @@ int main( int argc, char** argv ){
     */ 
 
     if( 3 > argc ){
-        fprintf(stderr, RED"%s\n"RESET, "USAGE: <host> <port>");
+        fprintf(stderr, RED"%s\n"RESET, "USAGE:client <host> <port>");
+        return 1;
     }
 
+    #ifndef VERBOSE
     printf( "%s", YELLOW"[!] Getting address information...\n"RESET);
+    #endif
     struct addrinfo hints, *server_addr;
     memset(&hints, 0, sizeof(hints)); //set all the addr with zero
     hints.ai_socktype = SOCK_STREAM;
@@ -130,19 +133,16 @@ int main( int argc, char** argv ){
         return 1;
     }
 
+    #ifndef VERBOSE
     printf( "%s", GREEN"[+] Address Information:\n");
-    printf( "%s", "====================\n");
+    printf( "%s", "====================\n"); 
     print_addrinfo(server_addr);
+    #endif
 
 
-
-
-
-
-
-
-
+    #ifndef VERBOSE
     printf( "%s", YELLOW"[!] Creating socket... \n"RESET);
+    #endif
     int sock_server = socket(server_addr->ai_family,
                                 server_addr->ai_socktype, server_addr->ai_protocol);
     if ( sock_server < 0 ) {
@@ -150,13 +150,10 @@ int main( int argc, char** argv ){
         freeaddrinfo(server_addr);
         return 1;
     }
+    #ifndef VERBOSE
     printf( "%s", GREEN"[+] Socket created. \n"RESET);
-
+    #endif
     
-
-
-
-
 
 
     printf( "%s", YELLOW"[!] Connecting to server... \n"RESET);
@@ -171,10 +168,7 @@ int main( int argc, char** argv ){
 
 
 
-
-
     freeaddrinfo(server_addr);
-
 
 
     pthread_t send_tid, recv_tid;
